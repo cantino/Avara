@@ -135,7 +135,11 @@ Screen::Screen(const Vector2i &size, const std::string &caption, bool resizable,
        Default value is an OpenGL 3.3 core profile context. */
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, glMajor);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, glMinor);
+#if defined(AVARA_GLES)
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_ES);
+#else
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
+#endif
 
     SDL_GL_SetAttribute(SDL_GL_RED_SIZE, colorBits);
     SDL_GL_SetAttribute(SDL_GL_GREEN_SIZE, colorBits);
@@ -167,7 +171,7 @@ Screen::Screen(const Vector2i &size, const std::string &caption, bool resizable,
     if (!mSDLWindow || !mGLContext)
         throw std::runtime_error("Could not create an OpenGL " +
                                  std::to_string(glMajor) + "." +
-                                 std::to_string(glMinor) + " context!");
+                                 std::to_string(glMinor) + " context: " + SDL_GetError());
 
     SDL_GL_MakeCurrent(mSDLWindow, mGLContext);
 

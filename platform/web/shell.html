@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Avara</title>
+<style>
+  html, body { margin: 0; padding: 0; height: 100%; background: #0b0b0d; color: #c8c8cc;
+               font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; overflow: hidden; }
+  #wrap { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; }
+  canvas#canvas { display: block; background: #000; outline: none; image-rendering: pixelated; }
+  #status { position: fixed; inset: 0; display: flex; flex-direction: column;
+            align-items: center; justify-content: center; gap: 14px;
+            background: #0b0b0d; z-index: 10; text-align: center; }
+  #status.hidden { display: none; }
+  #bar { width: 260px; height: 3px; background: #26262c; overflow: hidden; }
+  #bar > i { display: block; height: 100%; width: 0; background: #6ea8fe; transition: width .2s; }
+  #note { position: fixed; left: 10px; bottom: 8px; opacity: .45; font-size: 11px; z-index: 5; }
+</style>
+</head>
+<body>
+<div id="wrap"><canvas id="canvas" tabindex="-1" oncontextmenu="event.preventDefault()"></canvas></div>
+<div id="status"><div id="msg">loading…</div><div id="bar"><i></i></div></div>
+<div id="note">click the canvas to capture the mouse · esc releases it</div>
+<script>
+  var statusEl = document.getElementById('status');
+  var msgEl = document.getElementById('msg');
+  var barEl = document.querySelector('#bar > i');
+  var canvas = document.getElementById('canvas');
+
+  // Command-line arguments come from the query string so a link can pick the
+  // level or the player name, e.g. avara.html?name=Andrew&cmd=/load%20alektra
+  var params = new URLSearchParams(location.search);
+  var args = [];
+  if (params.get('name')) args.push('-n', params.get('name'));
+  if (params.get('frametime')) args.push('-f', params.get('frametime'));
+  params.getAll('cmd').forEach(function (c) { args.push('-/', c); });
+  params.getAll('arg').forEach(function (a) { args.push(a); });
+
+  var Module = {
+    canvas: canvas,
+    arguments: args,
+    setStatus: function (text) {
+      if (!text) { statusEl.classList.add('hidden'); return; }
+      var m = /([^(]+)\((\d+(\.\d+)?)\/(\d+)\)/.exec(text);
+      msgEl.textContent = m ? m[1] : text;
+      if (m) barEl.style.width = (parseInt(m[2], 10) / parseInt(m[4], 10) * 100) + '%';
+    },
+    printErr: function (t) { console.error(t); },
+  };
+
+  // Browsers only start audio after a gesture, and pointer lock needs one too.
+  canvas.addEventListener('click', function () {
+    if (Module.SDL2 && Module.SDL2.audioContext &&
+        Module.SDL2.audioContext.state === 'suspended') {
+      Module.SDL2.audioContext.resume();
+    }
+    canvas.focus();
+  });
+
+  // Keep browser shortcuts out of keys the game binds (Tab deploys the scout).
+  window.addEventListener('keydown', function (e) {
+    if (['Tab', 'F1', "'", '/'].indexOf(e.key) !== -1) e.preventDefault();
+  }, true);
+
+  window.onerror = function (e) { msgEl.textContent = 'error: ' + e; statusEl.classList.remove('hidden'); };
+</script>
+{{{ SCRIPT }}}
+</body>
+</html>

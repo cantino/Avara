@@ -25,13 +25,17 @@
     #include <Windows.h>
     #endif
     #include <glad/glad.h>
+#elif defined(__EMSCRIPTEN__)
+    /* Emscripten provides GLES3 headers directly; there is no loader to run. */
+    #include <GLES3/gl3.h>
+    #include <GLES2/gl2ext.h>
 #endif
 #endif // DOXYGEN_SHOULD_SKIP_THIS
 
 #include <nanovg.h>
 
 // Special treatment of linux Nvidia opengl headers
-#if !defined(_WIN32) && !defined(__APPLE__)
+#if !defined(_WIN32) && !defined(__APPLE__) && !defined(__EMSCRIPTEN__)
   #if !defined(GL_UNIFORM_BUFFER)
     #warning NanoGUI suspects you have the NVIDIA OpenGL headers installed.  \
              Compilation will likely fail. If it does, you have two choices: \

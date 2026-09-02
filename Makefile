@@ -98,6 +98,10 @@ SIGNING_ID := NONE
 
 avara: set-version $(BUILD_DIR)/Avara
 
+# WebAssembly build. Needs the Emscripten SDK; see platform/web/README.md.
+web:
+	platform/web/build.sh
+
 tests: set-version $(BUILD_DIR)/tests
 	AVARA_RSRC_PATH=$(shell pwd)/ $(BUILD_DIR)/tests
 
@@ -180,7 +184,7 @@ $(BUILD_DIR)/%.mm.o: %.mm
 	$(MKDIR_P) $(dir $@)
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $< -o $@
 
-.PHONY: clean
+.PHONY: clean web
 
 set-version:
 	grep -q $(GIT_HASH) src/util/GitVersion.h || (echo "#define GIT_VERSION \"$(GIT_HASH)\"" > src/util/GitVersion.h)

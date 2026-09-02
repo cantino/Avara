@@ -175,6 +175,12 @@ bool CTrackerWindow::editing() {
 }
 
 void CTrackerWindow::Query() {
+#if defined(__EMSCRIPTEN__)
+    // cpp-httplib needs raw sockets. The web build will query the tracker
+    // through emscripten_fetch (and needs CORS on the tracker to do it).
+    resultsLabel->setCaption("tracker unavailable in this build");
+    return;
+#else
     std::string address = gApplication->String(kTrackerAddress);
     httplib::Client client(address.c_str(), 80);
     auto resp = client.Get("/api/v1/games/");
@@ -211,4 +217,5 @@ void CTrackerWindow::Query() {
 
         setNeedsLayout();
     }
+#endif
 }

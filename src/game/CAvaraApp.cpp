@@ -222,8 +222,15 @@ CAvaraAppImpl::CAvaraAppImpl() : CApplication("Avara") {
 
     nextTrackerUpdate = 0;
     trackerUpdatePending = false;
+#if defined(__EMSCRIPTEN__)
+    // No background threads and no raw sockets in the browser. Tracker
+    // registration needs to go through an async fetch instead; until then a
+    // web client simply does not advertise itself.
+    trackerThread = nullptr;
+#else
     trackerThread = new std::thread(TrackerPinger, this);
     trackerThread->detach();
+#endif
 
     // register and handle text commands
     itsTui = new CommandManager(this);

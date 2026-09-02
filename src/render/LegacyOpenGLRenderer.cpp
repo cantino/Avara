@@ -73,10 +73,12 @@ const char *__glGetErrorString(GLenum error)
             return "Invalid Framebuffer Operation";
         case GL_OUT_OF_MEMORY:
             return "Out of Memory";
+#ifdef GL_STACK_UNDERFLOW  // desktop GL only; absent from GLES 3.0 / WebGL2
         case GL_STACK_UNDERFLOW:
             return "Stack Underflow";
         case GL_STACK_OVERFLOW:
             return "Stack Overflow";
+#endif
         // case GL_CONTEXT_LOST:
         //     return "Context Lost";
         default:
@@ -372,9 +374,14 @@ void LegacyOpenGLRenderer::RenderFrame()
 
     skyShader->Use();
 
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    glDrawArrays(GL_TRIANGLE_STRIP, 0, sizeof(legacySkyboxVertices));
+    // (No glTexParameteri here: the sky shader samples no texture, so setting
+    // wrap modes with nothing bound to GL_TEXTURE_2D is a no-op on desktop and
+    // an INVALID_OPERATION every frame on WebGL2.)
+    // 36 vertices making up 12 independent triangles (a cube), not a strip,
+    // and a count in vertices rather than bytes. Reading past the buffer is
+    // undefined on desktop but yields zeroed vertices under WebGL's robust
+    // buffer access, which drew huge triangles across the view.
+    glDrawArrays(GL_TRIANGLES, 0, sizeof(legacySkyboxVertices) / (3 * sizeof(float)));
     glDisableVertexAttribArray(0);
 
     __glCheckErrors();

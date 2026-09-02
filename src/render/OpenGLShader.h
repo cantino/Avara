@@ -3,7 +3,7 @@
 #ifdef _WIN32
 #include <Windows.h>
 #endif
-#include <glad/glad.h>
+#include "GLHeaders.h"
 #include <glm/detail/type_mat.hpp>
 #include <glm/detail/type_vec.hpp>
 

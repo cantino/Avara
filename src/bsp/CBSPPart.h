@@ -23,7 +23,7 @@
 #include <Windows.h>
 #endif
 #include <SDL2/SDL.h>
-#include <glad/glad.h>
+#include "GLHeaders.h"
 #include <glm/glm.hpp>
 
 #define MAXLIGHTS 4

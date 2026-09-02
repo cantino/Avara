@@ -100,10 +100,12 @@ const char *glGetErrorString(GLenum error)
             return "Invalid Framebuffer Operation";
         case GL_OUT_OF_MEMORY:
             return "Out of Memory";
+#ifdef GL_STACK_UNDERFLOW  // desktop GL only; absent from GLES 3.0 / WebGL2
         case GL_STACK_UNDERFLOW:
             return "Stack Underflow";
         case GL_STACK_OVERFLOW:
             return "Stack Overflow";
+#endif
         // case GL_CONTEXT_LOST:
         //     return "Context Lost";
         default:
@@ -435,7 +437,9 @@ void ModernOpenGLRenderer::RenderFrame()
 
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    glDrawArrays(GL_TRIANGLE_STRIP, 0, sizeof(skyboxVertices));
+    // See the note in LegacyOpenGLRenderer: independent triangles, and the
+    // count is in vertices, not bytes.
+    glDrawArrays(GL_TRIANGLES, 0, sizeof(skyboxVertices) / (3 * sizeof(float)));
     glDisableVertexAttribArray(0);
 
     // RENDER WORLD ////////////////////////////////////////////////////////////////////////////////

@@ -88,7 +88,7 @@ vec4 light_color(vec3 viewDir) {
             vec4(((ambient + extraAmbient) * ambientColor) + diffuse() + spec(viewDir), 1.0) * fragmentColor,
             float(lightsActive)
         ),
-        (1 + extraAmbient) * fragmentColor,
+        (1.0 + extraAmbient) * fragmentColor,
         float(fragmentGlow > 0.0)
     );
 }

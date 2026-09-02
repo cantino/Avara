@@ -17,7 +17,7 @@
 #include "BasePath.h"
 #include "Logging.h"
 #include "signal.h"
-#if !defined(__linux__) || defined(__GLIBC__)
+#if (!defined(__linux__) || defined(__GLIBC__)) && !defined(__EMSCRIPTEN__)
 #include "signalhandling.hpp"
 #endif
 #ifdef _WIN32
@@ -46,7 +46,7 @@ void SetHiDPI() {
 #include <sstream>
 #include <string>
 
-#if !defined(__linux__) || defined(__GLIBC__)
+#if (!defined(__linux__) || defined(__GLIBC__)) && !defined(__EMSCRIPTEN__)
 SignalHandling sh;
 #endif
 

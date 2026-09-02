@@ -50,14 +50,65 @@ void init() {
         setlocale(LC_NUMERIC, "C");
     #endif
 
-    if (SDL_Init(SDL_INIT_EVERYTHING) != 0)
-        throw std::runtime_error("Could not initialize SDL!");
+#if defined(__EMSCRIPTEN__)
+    /* SDL_INIT_EVERYTHING pulls in haptic and sensor subsystems that the
+       emscripten port does not implement, and one failure fails them all. */
+    const Uint32 initFlags = SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_EVENTS |
+                             SDL_INIT_TIMER | SDL_INIT_GAMECONTROLLER;
+#else
+    const Uint32 initFlags = SDL_INIT_EVERYTHING;
+#endif
+    if (SDL_Init(initFlags) != 0)
+        throw std::runtime_error(std::string("Could not initialize SDL: ") + SDL_GetError());
 
     setTime(0);
 }
 
+#if defined(__EMSCRIPTEN__)
+#include <emscripten.h>
+#endif
+
 static bool mainloop_active = false;
 int throttle = 0;
+
+/* One pass of the main loop: draw every visible screen, then handle input.
+   Factored out so platforms that cannot block the calling thread -- the web,
+   where the browser owns the event loop -- can drive it a frame at a time. */
+static void mainloop_iteration() {
+    SDL_Event theEvent;
+
+    int numScreens = 0;
+    for(auto screen : __nanogui_screens) {
+        if (!screen->visible()) {
+            continue;
+        }
+        screen->idle();
+        screen->drawAll();
+        numScreens++;
+    }
+
+    if (numScreens == 0) {
+        /* Give up if there was nothing to draw */
+        mainloop_active = false;
+        return;
+    }
+
+#if defined(__EMSCRIPTEN__)
+    /* The browser drives the frame clock, so never block waiting for input:
+       drain whatever has queued up since the last animation frame. */
+    while (SDL_PollEvent(&theEvent)) {
+#else
+    /* Wait for mouse/keyboard or empty refresh events */
+    if (SDL_WaitEventTimeout(&theEvent, throttle)) {  // uses SDL_PollEvent(&theEvent) when throttle == 0
+#endif
+        if (theEvent.type == SDL_QUIT) {
+            mainloop_active = false;
+        }
+        for(auto screen : __nanogui_screens) {
+            screen->handleSDLEvent(theEvent);
+        }
+    }
+}
 
 void mainloop(int refresh) {
     throttle = refresh;
@@ -66,44 +117,20 @@ void mainloop(int refresh) {
 
     mainloop_active = true;
 
-    //try {
-        SDL_Event theEvent;
+#if defined(__EMSCRIPTEN__)
+    /* Hand the loop to requestAnimationFrame. The third argument unwinds the
+       caller's stack without tearing down the runtime, so main() does not run
+       its shutdown path on the way out. */
+    emscripten_set_main_loop(mainloop_iteration, 0, 1);
+#else
+    while (mainloop_active) {
+        mainloop_iteration();
+    }
 
-        while (mainloop_active) {
-            int numScreens = 0;
-            for(auto screen : __nanogui_screens) {
-                if (!screen->visible()) {
-                    continue;
-                }
-                screen->idle();
-                screen->drawAll();
-                numScreens++;
-            }
-
-            if (numScreens == 0) {
-                /* Give up if there was nothing to draw */
-                mainloop_active = false;
-                break;
-            }
-
-            /* Wait for mouse/keyboard or empty refresh events */
-            int result = SDL_WaitEventTimeout(&theEvent, throttle);  // uses SDL_PollEvent(&theEvent) when throttle == 0
-            if(result) {
-                if (theEvent.type == SDL_QUIT) {
-                    mainloop_active = false;
-                }
-                for(auto screen : __nanogui_screens) {
-                    screen->handleSDLEvent(theEvent);
-                }
-            }
-        }
-
-        /* Process events once more */
-        SDL_PollEvent(&theEvent);
-    //} catch (const std::exception &e) {
-    //    std::cerr << "Caught exception in main loop: " << e.what() << std::endl;
-    //    leave();
-    //}
+    /* Process events once more */
+    SDL_Event theEvent;
+    SDL_PollEvent(&theEvent);
+#endif
 }
 
 void leave() {

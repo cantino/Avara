@@ -3,7 +3,7 @@
 #ifdef _WIN32
 #include <Windows.h>
 #endif
-#include <glad/glad.h>
+#include "GLHeaders.h"
 
 #include <algorithm>
 #include <math.h>
