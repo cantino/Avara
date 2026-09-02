@@ -1,0 +1,11 @@
+services:
+  avara:
+    build:
+      context: .
+      dockerfile: platform/web/Dockerfile
+      args:
+        # Level set packaged into the build; see platform/web/README.md.
+        AVARA_WEB_LEVELSET: ${AVARA_WEB_LEVELSET:-aa-normal}
+    image: avara-web
+    ports:
+      - "${AVARA_WEB_PORT:-8099}:80"

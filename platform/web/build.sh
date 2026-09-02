@@ -24,8 +24,11 @@ fi
 BUILD_DIR=${BUILD_DIR:-build-web}
 mkdir -p "$BUILD_DIR"
 
-grep -q "$(git describe --always --dirty)" src/util/GitVersion.h 2>/dev/null || \
-  echo "#define GIT_VERSION \"$(git describe --always --dirty)\"" > src/util/GitVersion.h
+# Stamp the build. Tolerate a source tree with no git metadata (a tarball, or
+# a container build that excluded .git).
+GITV=$(git describe --always --dirty 2>/dev/null || echo unknown)
+grep -q "$GITV" src/util/GitVersion.h 2>/dev/null || \
+  echo "#define GIT_VERSION \"$GITV\"" > src/util/GitVersion.h
 
 SRC_DIRS=$(find src -type d -not -path src)
 SRC_DIRS="$SRC_DIRS vendor/nanovg vendor/nanogui vendor/pugixml vendor"
@@ -44,24 +47,40 @@ SRCS=$(echo "$SRCS" | grep -v 'vendor/nanogui/glutil.cpp')
 # Browsers have no UDP sockets; AvaraTCPWeb.cpp replaces the BSD-socket layer.
 SRCS=$(echo "$SRCS" | grep -v 'src/net/AvaraTCP.cpp')
 
-OBJS=""
-FAIL=0
-for s in $SRCS; do
-  o="$BUILD_DIR/$s.o"
-  mkdir -p "$(dirname "$o")"
-  if [ ! -f "$o" ] || [ "$s" -nt "$o" ]; then
-    case "$s" in
-      *.c)   cmd="emcc $CPPFLAGS -c $s -o $o" ;;
-      *.cpp) cmd="em++ $CPPFLAGS $CXXFLAGS -c $s -o $o" ;;
-    esac
-    if ! $cmd 2> "$o.log"; then
-      echo "FAILED: $s"; FAIL=$((FAIL+1))
+# Compile in parallel. xargs -P rather than bash job control so this still
+# works on the bash 3.2 that ships with macOS.
+JOBS=${JOBS:-$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)}
+
+compile_one() {
+  src="$1"
+  obj="$BUILD_DIR/$src.o"
+  mkdir -p "$(dirname "$obj")"
+  # Skip anything already newer than its source.
+  if [ -f "$obj" ] && [ ! "$src" -nt "$obj" ]; then return 0; fi
+  case "$src" in
+    *.c)   emcc $CPPFLAGS -c "$src" -o "$obj" 2> "$obj.log" ;;
+    *.cpp) em++ $CPPFLAGS $CXXFLAGS -c "$src" -o "$obj" 2> "$obj.log" ;;
+  esac || { echo "FAILED: $src"; touch "$BUILD_DIR/.failed"; }
+}
+export -f compile_one
+export BUILD_DIR CPPFLAGS CXXFLAGS
+
+rm -f "$BUILD_DIR/.failed"
+echo "compiling $(echo "$SRCS" | wc -w | tr -d ' ') sources with $JOBS jobs..."
+printf '%s\n' $SRCS | xargs -P "$JOBS" -I{} bash -c 'compile_one "$@"' _ {}
+
+if [ -f "$BUILD_DIR/.failed" ]; then
+  for src in $SRCS; do
+    if [ -s "$BUILD_DIR/$src.o.log" ] && grep -q "error:" "$BUILD_DIR/$src.o.log"; then
+      echo "--- $src ---"
+      grep "error:" "$BUILD_DIR/$src.o.log" | head -5
     fi
-  fi
-  OBJS="$OBJS $o"
-done
-echo "compile failures: $FAIL"
-[ "$FAIL" -gt 0 ] && exit 1
+  done
+  exit 1
+fi
+
+OBJS=""
+for src in $SRCS; do OBJS="$OBJS $BUILD_DIR/$src.o"; done
 echo "$OBJS" > "$BUILD_DIR/objs.txt"
 
 # --- link ---

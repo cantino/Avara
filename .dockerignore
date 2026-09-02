@@ -1,0 +1,7 @@
+build
+build-web
+.vscode
+.zed
+.DS_Store
+**/*.o
+**/*.d

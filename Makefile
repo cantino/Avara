@@ -102,6 +102,10 @@ avara: set-version $(BUILD_DIR)/Avara
 web:
 	platform/web/build.sh
 
+# Same build, but inside a container: needs only docker, and serves the result.
+web-docker:
+	docker compose up --build
+
 tests: set-version $(BUILD_DIR)/tests
 	AVARA_RSRC_PATH=$(shell pwd)/ $(BUILD_DIR)/tests
 
@@ -184,7 +188,7 @@ $(BUILD_DIR)/%.mm.o: %.mm
 	$(MKDIR_P) $(dir $@)
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $< -o $@
 
-.PHONY: clean web
+.PHONY: clean web web-docker
 
 set-version:
 	grep -q $(GIT_HASH) src/util/GitVersion.h || (echo "#define GIT_VERSION \"$(GIT_HASH)\"" > src/util/GitVersion.h)

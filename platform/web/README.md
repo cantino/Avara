@@ -4,7 +4,29 @@ Builds `src/` to WebAssembly and runs it in a browser on WebGL2. The renderer
 already had a GLES 3.0 path (`AVARA_GLES`, used by the iOS target) and WebGL2
 *is* GLES 3.0, so the graphics work is mostly reuse.
 
-## Build
+## Build and run with Docker
+
+Needs only git and docker on the host -- no SDK, no toolchain:
+
+```sh
+git clone -b claude/avara-web-multiplayer-clone-l1w955 https://github.com/cantino/avara
+cd avara
+docker compose up --build      # or: make web-docker
+```
+
+Then open <http://localhost:8099>.
+
+The image compiles the client with the Emscripten SDK and serves the result
+with nginx. A first build takes several minutes; object files live in a
+BuildKit cache mount, so editing one source file and running the same command
+again recompiles only that file.
+
+```sh
+AVARA_WEB_PORT=3000 docker compose up --build          # different port
+AVARA_WEB_LEVELSET=blockparty docker compose up --build # different level set
+```
+
+## Build with a local toolchain
 
 ```sh
 # once
@@ -39,6 +61,8 @@ work, because the `.wasm` and `.data` files are fetched.
 cd build-web && python3 -m http.server 8099
 # then open http://localhost:8099/avara.html
 ```
+
+`JOBS` controls compile parallelism (defaults to the CPU count).
 
 Query-string options, so a link can pick what loads:
 
