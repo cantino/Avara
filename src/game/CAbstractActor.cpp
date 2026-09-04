@@ -77,24 +77,31 @@ void CAbstractActor::UnlinkLocation() {
     } while (--i);
 }
 
-#define LOCATORTABLESCALE (LOCATORRECTSCALE - 2)
-
 void CAbstractActor::LinkBox(Fixed minX, Fixed minZ, Fixed maxX, Fixed maxZ) {
-    short *linkTable;
+    ActorLocator **linkTable;
     ActorLocator *head;
     ActorLocator *loc;
     uint32_t mask = LOCCOORDMASK;
 
-    minX = (minX & mask) >> (LOCATORTABLESCALE - LOCATORTABLEBITS);
-    maxX = (maxX & mask) >> (LOCATORTABLESCALE - LOCATORTABLEBITS);
-    minZ = (minZ & mask) >> LOCATORTABLESCALE;
-    maxZ = (maxZ & mask) >> LOCATORTABLESCALE;
+    // Cell indices, identical to what the lookup side computes:
+    // BuildPartProximityList's (x << LOCATORTABLEBITS) + z, and LOCTOTABLE.
+    // The x term lands in bits 6..11 and the z term in bits 0..5, so OR is +.
+    //
+    // This used to shift two bits less and index gCurrentGame->locatorTable as
+    // a short*, which scaled each cell to 8 bytes -- correct only where a
+    // pointer is 8 bytes wide. On a 32-bit target (wasm32) every actor was
+    // linked into cell 2*i instead of i, so lookups found nothing and half the
+    // writes ran past the end of the table.
+    minX = (minX & mask) >> (LOCATORRECTSCALE - LOCATORTABLEBITS);
+    maxX = (maxX & mask) >> (LOCATORRECTSCALE - LOCATORTABLEBITS);
+    minZ = (minZ & mask) >> LOCATORRECTSCALE;
+    maxZ = (maxZ & mask) >> LOCATORRECTSCALE;
 
     loc = locLinks;
     if (loc->next) {
         UnlinkLocation();
     }
-    linkTable = (short *)gCurrentGame->locatorTable;
+    linkTable = gCurrentGame->locatorTable;
 
     head = (ActorLocator *)&linkTable[minX | minZ];
     loc->prev = head;

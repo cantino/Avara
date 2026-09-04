@@ -35,7 +35,8 @@ SRC_DIRS="$SRC_DIRS vendor/nanovg vendor/nanogui vendor/pugixml vendor"
 INCFLAGS=""
 for d in $SRC_DIRS; do INCFLAGS="$INCFLAGS -I$d"; done
 
-CPPFLAGS="$INCFLAGS -MMD -MP -Wall -DAVARA_GLES -O2 -g1"
+OPTFLAGS=${OPTFLAGS:--O2 -g1}
+CPPFLAGS="$INCFLAGS -MMD -MP -Wall -DAVARA_GLES $OPTFLAGS"
 CPPFLAGS="$CPPFLAGS -sUSE_SDL=2 -sUSE_SQLITE3=1"
 CPPFLAGS="$CPPFLAGS -Wno-unknown-pragmas -Wno-multichar -Wno-deprecated-declarations"
 CXXFLAGS="-std=c++17"
@@ -91,7 +92,7 @@ LDFLAGS="$LDFLAGS -sMIN_WEBGL_VERSION=2 -sMAX_WEBGL_VERSION=2 -sFULL_ES3=1"
 LDFLAGS="$LDFLAGS -sALLOW_MEMORY_GROWTH=1 -sINITIAL_MEMORY=268435456 -sSTACK_SIZE=5242880"
 LDFLAGS="$LDFLAGS -sEXIT_RUNTIME=0 -sASSERTIONS=1 -sNO_DISABLE_EXCEPTION_CATCHING"
 LDFLAGS="$LDFLAGS -sEXPORTED_RUNTIME_METHODS=['callMain','ccall','cwrap']"
-LDFLAGS="$LDFLAGS -O2 -g1"
+LDFLAGS="$LDFLAGS $OPTFLAGS"
 
 # Assets are preloaded into MEMFS at "/", which is what SDL_GetBasePath()
 # returns here, so GetBasePath() resolves rsrc/ and levels/ unchanged.
