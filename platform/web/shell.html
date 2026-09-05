@@ -7,7 +7,8 @@
 <style>
   html, body { margin: 0; padding: 0; height: 100%; background: #0b0b0d; color: #c8c8cc;
                font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; overflow: hidden; }
-  #wrap { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; }
+  #wrap { position: fixed; left: 0; right: 0; top: 0; bottom: 0;
+          display: flex; align-items: flex-start; justify-content: center; }
   canvas#canvas { display: block; background: #000; outline: none; image-rendering: pixelated; }
   #status { position: fixed; inset: 0; display: flex; flex-direction: column;
             align-items: center; justify-content: center; gap: 14px;
@@ -15,30 +16,43 @@
   #status.hidden { display: none; }
   #bar { width: 260px; height: 3px; background: #26262c; overflow: hidden; }
   #bar > i { display: block; height: 100%; width: 0; background: #6ea8fe; transition: width .2s; }
-  #bar { position: fixed; left: 0; right: 0; bottom: 0; padding: 6px 10px; z-index: 5;
-         display: flex; gap: 16px; align-items: center; font-size: 11px;
-         background: rgba(11,11,13,.85); }
+  #toolbar { position: fixed; left: 0; right: 0; bottom: 0; padding: 6px 10px; z-index: 5;
+             display: flex; gap: 10px; align-items: center; flex-wrap: wrap; font-size: 11px;
+             background: rgba(11,11,13,.85); }
   #hint { opacity: .45; }
   #room { color: #9ec5fe; }
   #room b { font-size: 15px; letter-spacing: .18em; color: #fff; }
-  #start { font: inherit; color: #d8f0e0; background: #2b5c3f; border: 1px solid #3f7d58;
-           border-radius: 3px; padding: 2px 10px; cursor: pointer; }
-  #start:hover { background: #35704c; }
-  #copy { font: inherit; color: #c8c8cc; background: #26262c; border: 1px solid #3a3a44;
-          border-radius: 3px; padding: 2px 8px; cursor: pointer; }
-  #copy:hover { background: #33333b; }
+  #toolbar button { font: inherit; color: #c8c8cc; background: #26262c; border: 1px solid #3a3a44;
+                    border-radius: 3px; padding: 2px 8px; cursor: pointer; }
+  #toolbar button:hover { background: #33333b; }
+  #start { color: #d8f0e0 !important; background: #2b5c3f !important; border-color: #3f7d58 !important; }
+  #start:hover { background: #35704c !important; }
   #copied { color: #7ddca4; }
+  #insecure { color: #ffb4a8; }
+  select, #chat { font: inherit; color: #c8c8cc; background: #17171b;
+                  border: 1px solid #3a3a44; border-radius: 3px; padding: 2px 6px; }
+  select { max-width: 190px; }
+  #chat { flex: 1 1 180px; min-width: 140px; }
+  #chat:focus, select:focus { outline: 1px solid #6ea8fe; }
 </style>
 </head>
 <body>
 <div id="wrap"><canvas id="canvas" tabindex="-1" oncontextmenu="event.preventDefault()"></canvas></div>
 <div id="status"><div id="msg">loading…</div><div id="bar"><i></i></div></div>
-<div id="bar">
+<div id="toolbar">
   <span id="room" hidden>room <b id="roomcode">-----</b>
     <button id="copy" type="button">copy invite link</button>
     <span id="copied" hidden>copied</span></span>
+  <select id="setpick" title="level set"></select>
+  <select id="levelpick" title="level"></select>
+  <button id="load" type="button">load level</button>
+  <button id="ready" type="button">ready &#8730;</button>
   <button id="start" type="button">start match</button>
-  <span id="hint">click the canvas to capture the mouse · esc releases it</span>
+  <input id="chat" type="text" autocomplete="off" spellcheck="false"
+         placeholder="chat, or /help for commands">
+  <span id="hint">click the canvas to capture the mouse &middot; esc releases it</span>
+  <span id="insecure" hidden>no SharedArrayBuffer here, so matches will not
+    start &mdash; serve over https, or localhost, with COOP/COEP</span>
 </div>
 <script>
   var statusEl = document.getElementById('status');
@@ -84,8 +98,10 @@
     canvas.focus();
   });
 
-  // Keep browser shortcuts out of keys the game binds (Tab deploys the scout).
+  // Keep browser shortcuts out of keys the game binds (Tab deploys the scout),
+  // but only while the game, and not the chat box, is what's listening.
   window.addEventListener('keydown', function (e) {
+    if (document.activeElement !== canvas) return;
     if (['Tab', 'F1', "'", '/'].indexOf(e.key) !== -1) e.preventDefault();
   }, true);
 
@@ -95,9 +111,22 @@
     document.getElementById('roomcode').textContent = ev.detail;
     document.getElementById('room').hidden = false;
   });
-  // Starting a match from the page rather than the small in-canvas button.
+
+  function call(fn) {
+    try { return fn(); } catch (e) { console.error(e); }
+  }
+  function say(text) {
+    call(function () { Module.ccall('avara_web_chat', null, ['string'], [text]); });
+    canvas.focus();
+  }
+
   document.getElementById('start').addEventListener('click', function () {
-    try { Module._avara_web_start_match(); } catch (e) { console.error(e); }
+    call(function () { Module._avara_web_start_match(); });
+    canvas.focus();
+  });
+  document.getElementById('ready').addEventListener('click', function () {
+    call(function () { Module._avara_web_ready(); });
+    canvas.focus();
   });
   document.getElementById('copy').addEventListener('click', function () {
     var url = location.origin + location.pathname + '?join=' + window.__avaraRoomCode;
@@ -107,6 +136,100 @@
       setTimeout(function () { c.hidden = true; }, 1500);
     });
   });
+
+  // SDL listens for keys on the window, so swallowing them at the input keeps
+  // typing a message from also driving the HECTOR.
+  var chatEl = document.getElementById('chat');
+  ['keyup', 'keypress'].forEach(function (t) {
+    chatEl.addEventListener(t, function (e) { e.stopPropagation(); });
+  });
+  chatEl.addEventListener('keydown', function (e) {
+    e.stopPropagation();
+    if (e.key === 'Enter') {
+      if (chatEl.value.length) say(chatEl.value);
+      chatEl.value = '';
+    } else if (e.key === 'Escape') {
+      chatEl.value = '';
+      canvas.focus();
+    }
+  });
+
+  // The level picker offers exactly the sets that were packaged into this
+  // build, read back from the engine's own manifests.
+  var setPick = document.getElementById('setpick');
+  var levelPick = document.getElementById('levelpick');
+  var levelSets = [];
+  function showSet() {
+    var set = levelSets[setPick.selectedIndex];
+    levelPick.innerHTML = '';
+    if (!set) return;
+    set.levels.forEach(function (lv) {
+      var o = document.createElement('option');
+      o.textContent = lv.name;
+      o.value = lv.tag;
+      levelPick.appendChild(o);
+    });
+  }
+  setPick.addEventListener('change', showSet);
+  document.getElementById('load').addEventListener('click', function () {
+    var set = levelSets[setPick.selectedIndex];
+    if (!set || !levelPick.value) return;
+    call(function () {
+      Module.ccall('avara_web_load_level', null, ['string', 'string'],
+                   [set.set, levelPick.value]);
+    });
+    canvas.focus();
+  });
+
+  // The manifests aren't parsed until the engine is up, so poll rather than
+  // guess at when that happens.
+  var levelPoll = setInterval(function () {
+    if (!Module._avara_web_level_json) return;
+    var json = call(function () {
+      var ptr = Module._avara_web_level_json();
+      var s = Module.UTF8ToString(ptr);
+      Module._free(ptr);
+      return s;
+    });
+    if (!json) return;
+    var parsed = JSON.parse(json);
+    if (!parsed.length) return;
+    clearInterval(levelPoll);
+    levelSets = parsed;
+    levelSets.forEach(function (s) {
+      var o = document.createElement('option');
+      o.textContent = s.set;
+      setPick.appendChild(o);
+    });
+    showSet();
+  }, 500);
+
+  // The canvas renders at whatever size the window leaves it, rather than at a
+  // fixed size scaled up, so text and edges stay sharp.
+  var resizeTimer = null;
+  function fitCanvas() {
+    if (!Module._avara_web_resize) return;
+    var bar = document.getElementById('toolbar');
+    var w = Math.max(640, Math.floor(window.innerWidth));
+    var h = Math.max(480, Math.floor(window.innerHeight - (bar ? bar.offsetHeight : 0)));
+    if (w === canvas.__w && h === canvas.__h) return;
+    canvas.__w = w; canvas.__h = h;
+    call(function () { Module._avara_web_resize(w, h); });
+  }
+  window.addEventListener('resize', function () {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(fitCanvas, 150);
+  });
+  var fitPoll = setInterval(function () {
+    if (Module._avara_web_resize) { clearInterval(fitPoll); fitCanvas(); }
+  }, 300);
+
+  // The whole failure is otherwise invisible until someone clicks start and
+  // nothing happens, so say it up front.
+  if (typeof SharedArrayBuffer === 'undefined' ||
+      (typeof crossOriginIsolated !== 'undefined' && !crossOriginIsolated)) {
+    document.getElementById('insecure').hidden = false;
+  }
 
   window.onerror = function (e) { msgEl.textContent = 'error: ' + e; statusEl.classList.remove('hidden'); };
 </script>

@@ -73,8 +73,11 @@ int throttle = 0;
 
 /* One pass of the main loop: draw every visible screen, then handle input.
    Factored out so platforms that cannot block the calling thread -- the web,
-   where the browser owns the event loop -- can drive it a frame at a time. */
-static void mainloop_iteration() {
+   where the browser owns the event loop -- can drive it a frame at a time.
+   Passing draw=false runs everything but the rendering, which is what a
+   hidden browser tab wants: the simulation and the network have to keep up
+   with the other players, but there is nothing on screen to update. */
+static void mainloop_iteration(bool draw) {
     SDL_Event theEvent;
 
     int numScreens = 0;
@@ -83,7 +86,9 @@ static void mainloop_iteration() {
             continue;
         }
         screen->idle();
-        screen->drawAll();
+        if (draw) {
+            screen->drawAll();
+        }
         numScreens++;
     }
 
@@ -110,6 +115,10 @@ static void mainloop_iteration() {
     }
 }
 
+#if defined(__EMSCRIPTEN__)
+static void mainloop_frame() { mainloop_iteration(true); }
+#endif
+
 void mainloop(int refresh) {
     throttle = refresh;
     if (mainloop_active)
@@ -121,10 +130,10 @@ void mainloop(int refresh) {
     /* Hand the loop to requestAnimationFrame. The third argument unwinds the
        caller's stack without tearing down the runtime, so main() does not run
        its shutdown path on the way out. */
-    emscripten_set_main_loop(mainloop_iteration, 0, 1);
+    emscripten_set_main_loop(mainloop_frame, 0, 1);
 #else
     while (mainloop_active) {
-        mainloop_iteration();
+        mainloop_iteration(true);
     }
 
     /* Process events once more */
@@ -132,6 +141,17 @@ void mainloop(int refresh) {
     SDL_PollEvent(&theEvent);
 #endif
 }
+
+#if defined(__EMSCRIPTEN__)
+/* Run one iteration from outside requestAnimationFrame. A hidden tab gets no
+   animation frames at all, which in a lockstep match stalls everyone else, so
+   the page drives the loop from a worker clock instead while it is hidden. */
+void pump_mainloop() {
+    if (mainloop_active) {
+        mainloop_iteration(false);  // nothing to see; keep the simulation going
+    }
+}
+#endif
 
 void leave() {
     mainloop_active = false;

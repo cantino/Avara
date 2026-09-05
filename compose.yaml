@@ -5,8 +5,8 @@ services:
       dockerfile: platform/web/Dockerfile
       target: serve
       args:
-        # Level set packaged into the build; see platform/web/README.md.
-        AVARA_WEB_LEVELSET: ${AVARA_WEB_LEVELSET:-aa-normal}
+        # Level sets packaged into the build; see platform/web/README.md.
+        AVARA_WEB_LEVELSETS: ${AVARA_WEB_LEVELSETS:-aa-normal aa-abnormal aa-deux-normal aa-deux-abnormal aa-tre single-player}
     image: avara-web
     ports:
       - "${AVARA_WEB_PORT:-8099}:80"

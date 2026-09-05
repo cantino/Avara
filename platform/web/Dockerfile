@@ -27,10 +27,10 @@ ENV SDL2_PORT_DIR=/opt/ports/SDL
 WORKDIR /src
 COPY . .
 
-# Which level set gets packaged into avara.data. The full corpus is far too
-# large to preload; serving sets over HTTP is future work.
-ARG AVARA_WEB_LEVELSET=aa-normal
-ENV AVARA_WEB_LEVELSET=${AVARA_WEB_LEVELSET}
+# Which level sets get packaged into avara.data, space separated. The full
+# corpus is far too large to preload; serving sets over HTTP is future work.
+ARG AVARA_WEB_LEVELSETS="aa-normal aa-abnormal aa-deux-normal aa-deux-abnormal aa-tre single-player"
+ENV AVARA_WEB_LEVELSETS=${AVARA_WEB_LEVELSETS}
 
 # The object files live in a cache mount so that editing one source file does
 # not recompile all ~160 of them; the artifacts are copied out into the layer.

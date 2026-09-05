@@ -39,6 +39,16 @@ const (
 	idleTimeout  = 120 * time.Second
 )
 
+// A session can only ever reach another session on this same gateway, so the
+// relay cannot be pointed at a third party. What it can still do is exhaust
+// this process, so cap how many sessions exist and how fast each one may send.
+var (
+	maxSessions   = 512
+	sendRate      = 2000.0 // datagrams per second, sustained
+	sendBurst     = 4000.0
+	maxSessionAge = 6 * time.Hour
+)
+
 type session struct {
 	id   uint32 // low 24 bits of the virtual address
 	ip   uint32
@@ -46,6 +56,27 @@ type session struct {
 	conn net.Conn
 	out  chan []byte
 	once sync.Once
+
+	tokens float64 // token bucket, refilled on use
+	last   time.Time
+}
+
+// allow reports whether this session may relay one more datagram now.
+func (s *session) allow(now time.Time) bool {
+	if s.last.IsZero() {
+		s.last = now
+		s.tokens = sendBurst
+	}
+	s.tokens += now.Sub(s.last).Seconds() * sendRate
+	s.last = now
+	if s.tokens > sendBurst {
+		s.tokens = sendBurst
+	}
+	if s.tokens < 1 {
+		return false
+	}
+	s.tokens--
+	return true
 }
 
 func (s *session) close() {
@@ -79,6 +110,12 @@ func (r *registry) lookup(id uint32) *session {
 }
 
 func (r *registry) claim() (uint32, error) {
+	r.mu.RLock()
+	full := len(r.m) >= maxSessions
+	r.mu.RUnlock()
+	if full {
+		return 0, errors.New("gateway full")
+	}
 	for attempt := 0; attempt < 64; attempt++ {
 		n, err := rand.Int(rand.Reader, big.NewInt(0xfffffe))
 		if err != nil {
@@ -218,6 +255,7 @@ func handleNet(w http.ResponseWriter, r *http.Request) {
 
 	id, err := reg.claim()
 	if err != nil {
+		log.Printf("refusing session: %v", err)
 		conn.Close()
 		return
 	}
@@ -246,8 +284,18 @@ func handleNet(w http.ResponseWriter, r *http.Request) {
 		log.Printf("session %s disconnected", roomCode(id))
 	}()
 
+	expiry := time.Now().Add(maxSessionAge)
 	for {
-		conn.SetReadDeadline(time.Now().Add(idleTimeout))
+		now := time.Now()
+		if now.After(expiry) {
+			log.Printf("session %s expired", roomCode(id))
+			return
+		}
+		deadline := now.Add(idleTimeout)
+		if deadline.After(expiry) {
+			deadline = expiry
+		}
+		conn.SetReadDeadline(deadline)
 		opcode, payload, err := readFrame(conn)
 		if err != nil {
 			return
@@ -282,6 +330,9 @@ func handleNet(w http.ResponseWriter, r *http.Request) {
 		case cmdData:
 			if len(payload) < 7 {
 				continue
+			}
+			if !s.allow(now) {
+				continue // over its rate; a real socket would drop these too
 			}
 			dstIP := binary.BigEndian.Uint32(payload[1:5])
 			dst := reg.lookup(dstIP & 0xffffff)
@@ -330,7 +381,11 @@ func roomCode(id uint32) string {
 func main() {
 	addr := flag.String("addr", envOr("AVARA_GW_ADDR", ":8088"), "listen address")
 	flag.BoolVar(&verbose, "v", os.Getenv("AVARA_GW_VERBOSE") != "", "log every relayed datagram")
+	flag.IntVar(&maxSessions, "max-sessions", maxSessions, "refuse new sessions past this many")
+	flag.Float64Var(&sendRate, "rate", sendRate, "datagrams per second each session may relay")
+	flag.DurationVar(&maxSessionAge, "max-age", maxSessionAge, "close a session after this long")
 	flag.Parse()
+	sendBurst = sendRate * 2
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/net", handleNet)

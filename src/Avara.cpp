@@ -92,6 +92,10 @@ std::vector<std::string> combinedArgs(std::string defaultArgs, int argc, char* a
 
 #if defined(__EMSCRIPTEN__)
 #include <emscripten.h>
+#include "AssetManager.h"
+#include "CNetManager.h"
+#include <json.hpp>
+#include <cstring>
 
 // Hooks for the page around the canvas. Hosting on the web is much easier with
 // a real button in the page chrome than with the small in-canvas one, and the
@@ -105,6 +109,85 @@ EMSCRIPTEN_KEEPALIVE void avara_web_start_match() {
             game->SendStartCommand();
         }
     }
+}
+
+// The page owns the canvas size: it fits the window, minus the toolbar, and
+// re-renders at the new resolution rather than scaling a fixed-size buffer.
+EMSCRIPTEN_KEEPALIVE void avara_web_resize(int w, int h) {
+    if (gApplication && w > 0 && h > 0) {
+        SDL_SetWindowSize(((CApplication *)gApplication)->sdlWindow(), w, h);
+    }
+}
+
+// A hidden tab gets no animation frames, and in a lockstep match a player who
+// switches tabs stalls everyone else, so the page keeps the loop turning from
+// a worker clock while it is hidden.
+EMSCRIPTEN_KEEPALIVE void avara_web_tick() {
+    nanogui::pump_mainloop();
+}
+
+// Chat is streamed a character at a time so everyone can watch you type, and a
+// carriage return is what commits the line -- and runs it, if it starts with a
+// slash. Sending the whole line at once keeps the same protocol, so /load and
+// friends work from the page exactly as they do from the in-canvas roster.
+EMSCRIPTEN_KEEPALIVE void avara_web_chat(const char *text) {
+    if (!gApplication || text == NULL) {
+        return;
+    }
+    CNetManager *net = ((CAvaraAppImpl *)gApplication)->GetNet();
+    if (!net) {
+        return;
+    }
+    char clear = '\x1B';
+    net->SendRosterMessage(1, &clear);
+    size_t len = strlen(text);
+    if (len > 0) {
+        net->SendRosterMessage(len, (char *)text);
+    }
+    char endline = 13;
+    net->SendRosterMessage(1, &endline);
+}
+
+// The ready checkmark, which is what the in-canvas Start/Ready button sends.
+EMSCRIPTEN_KEEPALIVE void avara_web_ready() {
+    if (gApplication) {
+        CNetManager *net = ((CAvaraAppImpl *)gApplication)->GetNet();
+        if (net) {
+            net->SendRosterMessage(checkMark_utf8);
+        }
+    }
+}
+
+// Loading by exact set and tag, which is what the page's picker knows; the
+// /load command matches on a substring instead.
+EMSCRIPTEN_KEEPALIVE void avara_web_load_level(const char *set, const char *tag) {
+    if (gApplication && set && tag) {
+        CNetManager *net = ((CAvaraAppImpl *)gApplication)->GetNet();
+        if (net) {
+            net->SendLoadLevel(set, tag);
+        }
+    }
+}
+
+// The page's level picker is populated from the sets that were actually
+// packaged into the build, so it can never offer a level nobody has.
+EMSCRIPTEN_KEEPALIVE char *avara_web_level_json() {
+    nlohmann::json sets = nlohmann::json::array();
+    for (auto &setName : AssetManager::GetAvailablePackages()) {
+        auto manifest = AssetManager::GetManifest(setName);
+        if (!manifest) {
+            continue;
+        }
+        nlohmann::json levels = nlohmann::json::array();
+        for (auto const &entry : (*manifest)->levelDirectory) {
+            levels.push_back({{"name", entry.levelName}, {"tag", entry.alfPath}});
+        }
+        if (levels.empty()) {
+            continue;
+        }
+        sets.push_back({{"set", setName}, {"levels", levels}});
+    }
+    return strdup(sets.dump().c_str());
 }
 
 }  // extern "C"

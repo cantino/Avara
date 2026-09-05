@@ -108,8 +108,8 @@ LDFLAGS="-sUSE_SDL=2 -sUSE_SQLITE3=1"
 LDFLAGS="$LDFLAGS -sMIN_WEBGL_VERSION=2 -sMAX_WEBGL_VERSION=2 -sFULL_ES3=1"
 LDFLAGS="$LDFLAGS -sALLOW_MEMORY_GROWTH=1 -sINITIAL_MEMORY=268435456 -sSTACK_SIZE=5242880"
 LDFLAGS="$LDFLAGS -sEXIT_RUNTIME=0 -sASSERTIONS=1 -sNO_DISABLE_EXCEPTION_CATCHING"
-LDFLAGS="$LDFLAGS -sEXPORTED_RUNTIME_METHODS=['callMain','ccall','cwrap']"
-LDFLAGS="$LDFLAGS -sEXPORTED_FUNCTIONS=['_main','_avara_web_start_match']"
+LDFLAGS="$LDFLAGS -sEXPORTED_RUNTIME_METHODS=['callMain','ccall','cwrap','UTF8ToString']"
+LDFLAGS="$LDFLAGS -sEXPORTED_FUNCTIONS=['_main','_malloc','_free','_avara_web_start_match','_avara_web_chat','_avara_web_ready','_avara_web_level_json','_avara_web_load_level','_avara_web_tick','_avara_web_resize']"
 LDFLAGS="$LDFLAGS $OPTFLAGS"
 
 # Assets are preloaded into MEMFS at "/", which is what SDL_GetBasePath()
@@ -122,10 +122,14 @@ PRELOAD="$PRELOAD --preload-file rsrc/objects.json@/rsrc/objects.json"
 PRELOAD="$PRELOAD --preload-file rsrc/set.json@/rsrc/set.json"
 PRELOAD="$PRELOAD --preload-file rsrc/default.avarascript@/rsrc/default.avarascript"
 PRELOAD="$PRELOAD --preload-file rsrc/sosumi.wav@/rsrc/sosumi.wav"
-PRELOAD="$PRELOAD --preload-file levels/${AVARA_WEB_LEVELSET:-aa-normal}@/levels/${AVARA_WEB_LEVELSET:-aa-normal}"
+# The original 1996 sets plus the single-player set, ~3MB packaged. Override
+# with AVARA_WEB_LEVELSETS to package a different selection.
+for set in ${AVARA_WEB_LEVELSETS:-aa-normal aa-abnormal aa-deux-normal aa-deux-abnormal aa-tre single-player}; do
+  PRELOAD="$PRELOAD --preload-file levels/$set@/levels/$set"
+done
 
 echo "linking..."
 em++ $(cat "$BUILD_DIR/objs.txt") "$BUILD_DIR/src/Avara.cpp.o" \
-  -o "$BUILD_DIR/avara.html" $LDFLAGS $PRELOAD --shell-file platform/web/shell.html
+  -o "$BUILD_DIR/avara.html" $LDFLAGS $PRELOAD --pre-js platform/web/net.js --shell-file platform/web/shell.html
 echo "built: $BUILD_DIR/avara.html"
 ls -lh "$BUILD_DIR"/avara.* 2>/dev/null

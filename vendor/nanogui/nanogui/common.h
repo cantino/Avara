@@ -408,6 +408,11 @@ extern int throttle;
  */
 extern NANOGUI_EXPORT void mainloop(int refresh = 50);
 
+#if defined(__EMSCRIPTEN__)
+/// Run a single main loop iteration from outside requestAnimationFrame.
+extern NANOGUI_EXPORT void pump_mainloop();
+#endif
+
 /// Request the application main loop to terminate (e.g. if you detached mainloop).
 extern NANOGUI_EXPORT void leave();
 
