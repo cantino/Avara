@@ -173,6 +173,9 @@ EMSCRIPTEN_KEEPALIVE void avara_web_load_level(const char *set, const char *tag)
 // packaged into the build, so it can never offer a level nobody has.
 EMSCRIPTEN_KEEPALIVE char *avara_web_level_json() {
     nlohmann::json sets = nlohmann::json::array();
+    if (!gApplication) {
+        return strdup(sets.dump().c_str());  // asked before the app exists
+    }
     for (auto &setName : AssetManager::GetAvailablePackages()) {
         auto manifest = AssetManager::GetManifest(setName);
         if (!manifest) {

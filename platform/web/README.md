@@ -96,13 +96,35 @@ behave like a real UDP socket and lets those loops work unchanged.
 
 ### Playing with people who are not on your machine
 
-The page must be a **secure context** for `SharedArrayBuffer` to exist at all:
-`https://`, or `http://localhost`. Serving the game to friends over plain HTTP
-on a LAN address will load and let everyone into the lobby, and then no match
-will start. So put it behind TLS -- a tunnel (`cloudflared tunnel --url
-http://localhost:8099`), a reverse proxy with a certificate, or any host you
-already have -- and share that URL. The WebSocket follows the page's scheme, so
-`wss://` needs no separate setup.
+`SharedArrayBuffer` only exists on a **trustworthy origin**, so the address your
+friends type matters. Measured, same content, same COOP/COEP headers:
+
+| Origin | `isSecureContext` | `crossOriginIsolated` | `SharedArrayBuffer` |
+|---|---|---|---|
+| `http://localhost`, `http://127.0.0.1` | true | true | works |
+| `http://<LAN IP>` | false | false | absent |
+| `https://<LAN IP>`, self-signed, cert accepted | true | true | works |
+| `https://<LAN IP>`, self-signed, cert refused | -- | page blocked | -- |
+| `http://<LAN IP>` + `--unsafely-treat-insecure-origin-as-secure` | false | **true** | works |
+
+So plain HTTP on a LAN address loads, fills the lobby, and then will not start a
+match. The page says so in red in the toolbar, because otherwise the symptom is
+indistinguishable from a bug.
+
+It does **not** have to be a publicly trusted certificate. A self-signed one is
+enough once the browser has accepted it, verified here end to end -- two clients
+through `wss://` on a self-signed cert, into a running match.
+[`mkcert`](https://github.com/FiloSottile/mkcert) makes that painless by
+installing a local CA, so there is no interstitial to click through.
+
+Pick whichever fits:
+
+| | |
+|---|---|
+| Over the internet, nothing to install | `cloudflared tunnel --url http://localhost:8099` and share the URL |
+| A group who will install one thing | Tailscale, then `tailscale serve https / http://localhost:8099` -- real certificates on `*.ts.net`, no port forwarding |
+| LAN, machines you control | `mkcert` a certificate for the host's IP, terminate TLS at nginx |
+| One-off LAN session | each client starts Chrome with `--unsafely-treat-insecure-origin-as-secure=http://<host>:8099 --user-data-dir=/tmp/avara` |
 
 One host runs both nginx and the gateway; everyone connects out to it, which is
 the point of the design -- no player needs an open inbound port, and neither

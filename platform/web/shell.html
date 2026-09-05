@@ -62,6 +62,8 @@
 
   // Command-line arguments come from the query string so a link can pick the
   // level or the player name, e.g. avara.html?name=Andrew&cmd=/load%20alektra
+  var runtimeUp = false;
+
   var params = new URLSearchParams(location.search);
   var args = [];
   if (params.get('name')) args.push('-n', params.get('name'));
@@ -86,6 +88,7 @@
       msgEl.textContent = m ? m[1] : text;
       if (m) barEl.style.width = (parseInt(m[2], 10) / parseInt(m[4], 10) * 100) + '%';
     },
+    onRuntimeInitialized: function () { runtimeUp = true; },
     printErr: function (t) { console.error(t); },
   };
 
@@ -112,7 +115,14 @@
     document.getElementById('room').hidden = false;
   });
 
+  // An export called before the runtime has initialized aborts the module
+  // outright, so everything the page calls into has to wait. (Module.calledRun
+  // is module-local in this emscripten version and never set on Module, so it
+  // cannot be used for this.) JS is single threaded, so by the time any timer
+  // runs, main() has either not started or has already built the app.
+  function ready() { return runtimeUp; }
   function call(fn) {
+    if (!ready()) return;
     try { return fn(); } catch (e) { console.error(e); }
   }
   function say(text) {
@@ -184,7 +194,7 @@
   // The manifests aren't parsed until the engine is up, so poll rather than
   // guess at when that happens.
   var levelPoll = setInterval(function () {
-    if (!Module._avara_web_level_json) return;
+    if (!ready()) return;
     var json = call(function () {
       var ptr = Module._avara_web_level_json();
       var s = Module.UTF8ToString(ptr);
@@ -208,7 +218,7 @@
   // fixed size scaled up, so text and edges stay sharp.
   var resizeTimer = null;
   function fitCanvas() {
-    if (!Module._avara_web_resize) return;
+    if (!ready()) return;
     var bar = document.getElementById('toolbar');
     var w = Math.max(640, Math.floor(window.innerWidth));
     var h = Math.max(480, Math.floor(window.innerHeight - (bar ? bar.offsetHeight : 0)));
@@ -221,7 +231,7 @@
     resizeTimer = setTimeout(fitCanvas, 150);
   });
   var fitPoll = setInterval(function () {
-    if (Module._avara_web_resize) { clearInterval(fitPoll); fitCanvas(); }
+    if (ready()) { clearInterval(fitPoll); fitCanvas(); }
   }, 300);
 
   // The whole failure is otherwise invisible until someone clicks start and
