@@ -10,6 +10,7 @@
 # Overridable so a mirror or a locally patched base can be substituted.
 ARG EMSDK_IMAGE=emscripten/emsdk:6.0.9
 ARG NGINX_IMAGE=nginx:1.29-alpine
+ARG GO_IMAGE=golang:1.24-alpine
 
 FROM ${EMSDK_IMAGE} AS build
 
@@ -42,3 +43,17 @@ FROM ${NGINX_IMAGE} AS serve
 COPY --from=build /out/ /usr/share/nginx/html/
 COPY platform/web/nginx.conf /etc/nginx/conf.d/default.conf
 EXPOSE 80
+
+# --- datagram gateway -------------------------------------------------------
+# Browsers have no UDP, so the client tunnels its datagrams here over a
+# WebSocket and this relays them between sessions. Standard library only, so
+# there is no module fetch during the build.
+FROM ${GO_IMAGE} AS gwbuild
+WORKDIR /src
+COPY platform/web/gateway/ ./
+RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/avara-gw .
+
+FROM alpine:3.20 AS gateway
+COPY --from=gwbuild /out/avara-gw /usr/local/bin/avara-gw
+EXPOSE 8088
+ENTRYPOINT ["/usr/local/bin/avara-gw", "-addr", ":8088"]

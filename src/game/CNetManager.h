@@ -133,6 +133,19 @@ public:
     virtual void Dispose();
     virtual Boolean ConfirmNetChange();
     virtual void ChangeNet(short netKind, std::string address);
+    // Adopt a comm manager built by ChangeNet as the live one.
+    virtual void AdoptNet(short netKind, std::unique_ptr<CCommManager> newManager);
+#if defined(__EMSCRIPTEN__)
+    // A browser cannot block waiting for the server's reply to a login, so a
+    // client connection is held here and adopted from the frame loop once the
+    // server has assigned us a slot. Adopting sooner would install a manager
+    // whose myId is still -1, and much of the game indexes playerTable by it.
+    std::unique_ptr<CCommManager> pendingNet;
+    short pendingNetKind = 0;
+    uint32_t pendingNetDeadline = 0;
+    bool pendingNetAttached = false;
+    virtual void PumpPendingNet();
+#endif
     virtual void ChangeNet(short netKind, std::string address, std::string password);
 
     virtual void ProcessQueue();

@@ -152,35 +152,31 @@ void CNetManager::ChangeNet(short netKind, std::string address, std::string pass
                     theServer->StartServing();
                     confirm = theServer->isConnected;
                 }   break;
-                case kClientNet:
+                case kClientNet: {
                     newManager = std::make_unique<CUDPComm>();
                     CUDPComm *theClient = (CUDPComm *)(newManager.get());
                     theClient->IUDPComm(kMaxAvaraPlayers - 1, TCPNETPACKETS, kAvaraNetVersion, itsGame->frameTime);
                     theClient->Connect(address, password);
+#if defined(__EMSCRIPTEN__)
+                    // The login is on its way but the reply cannot arrive
+                    // until we return to the browser's event loop, so hand
+                    // the manager to PumpPendingNet and adopt it there.
+                    if (pendingNet) {
+                        pendingNet->Dispose();
+                    }
+                    pendingNet = std::move(newManager);
+                    pendingNetKind = netKind;
+                    pendingNetDeadline = SDL_GetTicks() + kClientConnectTimeoutMsec;
+                    return;
+#else
                     confirm = theClient->isConnected;
-                    break;
+#endif
+                }   break;
             }
         }
 
         if (confirm && newManager) {
-            PresenceType keepPresence = playerTable[itsCommManager->myId]->Presence();
-            itsCommManager->Dispose();        // send kpPacketProtocolLogout message before being destroyed
-            itsProtoControl->Detach();
-            itsCommManager.swap(newManager);  // newManager takes place existing CCommManager which gets deleted when out of scope
-            playerTable[itsCommManager->myId]->SetPresence(keepPresence);
-            itsProtoControl->Attach(itsCommManager.get());
-            netStatus = netKind;
-            isConnected = true;
-            DisconnectSome(kdEveryone);
-
-            totalDistribution = 0;
-            DBG_Log("login", "sending kpLogin to server with presence=%d\n", keepPresence);
-            itsCommManager->SendPacket(kdServerOnly, kpLogin, 0, keepPresence, 0, 0L, NULL);
-            if (itsGame->loadedLevelInfo->levelName.length() > 0) {
-                itsGame->LevelReset(true);
-                // theRoster->InvalidateArea(kBottomBox, 0);
-            }
-            itsGame->itsApp->BroadcastCommand(kNetChangedCmd);
+            AdoptNet(netKind, std::move(newManager));
         }
     } else {
         playerTable[itsCommManager->myId]->NetDisconnect();
@@ -993,6 +989,77 @@ std::string CNetManager::FragmentMapToString() {
 void CNetManager::ViewControl() {
     playerTable[itsCommManager->myId]->ViewControl();
 }
+
+void CNetManager::AdoptNet(short netKind, std::unique_ptr<CCommManager> newManager) {
+    // A client has no slot until the server assigns one (CUDPComm leaves myId
+    // at -1 until the table of contents arrives), so tolerate not knowing.
+    auto validSlot = [](short id) { return id >= 0 && id < kMaxAvaraPlayers; };
+    short oldSlot = itsCommManager->myId;
+    PresenceType keepPresence =
+        validSlot(oldSlot) ? playerTable[oldSlot]->Presence() : kzAvailable;
+    itsCommManager->Dispose();        // send kpPacketProtocolLogout message before being destroyed
+    itsProtoControl->Detach();
+    itsCommManager.swap(newManager);  // newManager takes place existing CCommManager which gets deleted when out of scope
+    short newSlot = itsCommManager->myId;
+    if (validSlot(newSlot)) {
+        playerTable[newSlot]->SetPresence(keepPresence);
+    }
+    itsProtoControl->Attach(itsCommManager.get());
+    netStatus = netKind;
+    isConnected = true;
+    DisconnectSome(kdEveryone);
+
+    totalDistribution = 0;
+    DBG_Log("login", "sending kpLogin to server with presence=%d\n", keepPresence);
+    itsCommManager->SendPacket(kdServerOnly, kpLogin, 0, keepPresence, 0, 0L, NULL);
+    if (itsGame->loadedLevelInfo->levelName.length() > 0) {
+        itsGame->LevelReset(true);
+        // theRoster->InvalidateArea(kBottomBox, 0);
+    }
+    itsGame->itsApp->BroadcastCommand(kNetChangedCmd);
+}
+
+#if defined(__EMSCRIPTEN__)
+// Called once per frame while a client connection is in flight. Everything
+// the blocking wait loop in CUDPComm::ContactServer would have done, done a
+// frame at a time so the browser can actually deliver the reply.
+void CNetManager::PumpPendingNet() {
+    if (!pendingNet) {
+        return;
+    }
+
+    if (!pendingNetAttached) {
+        // Protocol packets are delivered through receivers registered on the
+        // manager they arrive on. Until the pending one has them, everything
+        // the server sends after the login -- the level, the roster -- is
+        // dropped on the floor.
+        itsProtoControl->Detach();
+        itsProtoControl->Attach(pendingNet.get());
+        pendingNetAttached = true;
+    }
+
+    pendingNet->ProcessQueue();
+
+    CUDPComm *theClient = static_cast<CUDPComm *>(pendingNet.get());
+    if (theClient->clientReady) {
+        theClient->isConnected = true;
+        std::unique_ptr<CCommManager> adopted = std::move(pendingNet);
+        pendingNetAttached = false;
+        AdoptNet(pendingNetKind, std::move(adopted));
+        return;
+    }
+
+    if (SDL_GetTicks() > pendingNetDeadline) {
+        SDL_Log("Connection attempt timed out\n");
+        itsGame->itsApp->AddMessageLine("Could not reach that game.");
+        itsProtoControl->Detach();
+        itsProtoControl->Attach(itsCommManager.get());
+        pendingNetAttached = false;
+        pendingNet->Dispose();
+        pendingNet.reset();
+    }
+}
+#endif
 
 void CNetManager::SendPingCommand(int pingTrips) {
     // there & back = 2 trips... send less to/from players in game

@@ -16,8 +16,30 @@
 
 #define DONT_USE_MINIMUM_VOLUME
 
+#if defined(__EMSCRIPTEN__)
+// Emscripten's SDL2 backend does not tear down its ScriptProcessorNode
+// synchronously, so the audio callback can still fire after
+// SDL_CloseAudioDevice() has freed the stream -- and after the mixer that
+// owns the callback has freed the buffers the callback reads. Since
+// CAvaraGame::InitMixer disposes and recreates the mixer on every level load,
+// that happened every time a level was loaded.
+//
+// Keep one device open for the life of the process and route the callback
+// through a pointer we clear before anything it reads is freed.
+static SDL_AudioDeviceID gWebAudioDevice = 0;
+static CSoundMixer *gWebAudioMixer = NULL;
+#endif
+
 void AudioCallback(void *userData, uint8_t *stream, int size) {
+#if defined(__EMSCRIPTEN__)
+    CSoundMixer *theMaster = gWebAudioMixer;
+    if (theMaster == NULL) {
+        SDL_memset(stream, 0, size);
+        return;
+    }
+#else
     CSoundMixer *theMaster = (CSoundMixer *)userData;
+#endif
     theMaster->DoubleBack(stream, size);
 }
 
@@ -210,7 +232,17 @@ void CSoundMixer::ISoundMixer(Fixed sampRate,
         want.samples = soundBufferSize;
         want.callback = AudioCallback;
         want.userdata = this;
+#if defined(__EMSCRIPTEN__)
+        // Open once, then reuse. Every mixer is created with the same format
+        // (see CAvaraGame::InitMixer), so the existing device still fits.
+        if (gWebAudioDevice == 0) {
+            gWebAudioDevice = SDL_OpenAudioDevice(NULL, 0, &want, &have, 0);
+        }
+        outputDevice = gWebAudioDevice;
+        gWebAudioMixer = this;
+#else
         outputDevice = SDL_OpenAudioDevice(NULL, 0, &want, &have, 0);
+#endif
         SDL_Log("Sound device (id=%d): format=%d channels=%d samples=%d size=%d\n",
                 outputDevice,
                 want.format,
@@ -282,8 +314,17 @@ void CSoundMixer::Dispose() {
     short i;
     MixerInfo *mix;
 
+#if defined(__EMSCRIPTEN__)
+    // Stop the callback reaching this mixer before its buffers are freed
+    // below, and leave the device open. See the note by AudioCallback.
+    if (gWebAudioMixer == this) {
+        gWebAudioMixer = NULL;
+    }
+    SDL_PauseAudioDevice(outputDevice, 1);
+#else
     SDL_PauseAudioDevice(outputDevice, 1);
     SDL_CloseAudioDevice(outputDevice);
+#endif
 
     if (motionLink) {
         altLink = NULL;

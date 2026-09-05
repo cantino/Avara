@@ -52,18 +52,35 @@ SRCS=$(echo "$SRCS" | grep -v 'src/net/AvaraTCP.cpp')
 # works on the bash 3.2 that ships with macOS.
 JOBS=${JOBS:-$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)}
 
+# True when the object is missing, or older than its source or any header it
+# included last time. -MMD leaves those prerequisites in a .d file beside the
+# object; ignoring them meant a header change quietly produced a build with
+# mismatched class layouts.
+needs_rebuild() {
+  obj="$1"; src="$2"; dep="${obj%.o}.d"
+  [ -f "$obj" ] || return 0
+  [ "$src" -nt "$obj" ] && return 0
+  [ -f "$dep" ] || return 1
+  for pre in $(tr '\\\n' '  ' < "$dep"); do
+    case "$pre" in
+      *:) continue ;;                       # -MP phony targets
+    esac
+    [ -f "$pre" ] && [ "$pre" -nt "$obj" ] && return 0
+  done
+  return 1
+}
+
 compile_one() {
   src="$1"
   obj="$BUILD_DIR/$src.o"
   mkdir -p "$(dirname "$obj")"
-  # Skip anything already newer than its source.
-  if [ -f "$obj" ] && [ ! "$src" -nt "$obj" ]; then return 0; fi
+  if ! needs_rebuild "$obj" "$src"; then return 0; fi
   case "$src" in
     *.c)   emcc $CPPFLAGS -c "$src" -o "$obj" 2> "$obj.log" ;;
     *.cpp) em++ $CPPFLAGS $CXXFLAGS -c "$src" -o "$obj" 2> "$obj.log" ;;
   esac || { echo "FAILED: $src"; touch "$BUILD_DIR/.failed"; }
 }
-export -f compile_one
+export -f compile_one needs_rebuild
 export BUILD_DIR CPPFLAGS CXXFLAGS
 
 rm -f "$BUILD_DIR/.failed"
@@ -92,6 +109,7 @@ LDFLAGS="$LDFLAGS -sMIN_WEBGL_VERSION=2 -sMAX_WEBGL_VERSION=2 -sFULL_ES3=1"
 LDFLAGS="$LDFLAGS -sALLOW_MEMORY_GROWTH=1 -sINITIAL_MEMORY=268435456 -sSTACK_SIZE=5242880"
 LDFLAGS="$LDFLAGS -sEXIT_RUNTIME=0 -sASSERTIONS=1 -sNO_DISABLE_EXCEPTION_CATCHING"
 LDFLAGS="$LDFLAGS -sEXPORTED_RUNTIME_METHODS=['callMain','ccall','cwrap']"
+LDFLAGS="$LDFLAGS -sEXPORTED_FUNCTIONS=['_main','_avara_web_start_match']"
 LDFLAGS="$LDFLAGS $OPTFLAGS"
 
 # Assets are preloaded into MEMFS at "/", which is what SDL_GetBasePath()
@@ -103,6 +121,7 @@ PRELOAD="$PRELOAD --preload-file rsrc/shaders@/rsrc/shaders"
 PRELOAD="$PRELOAD --preload-file rsrc/objects.json@/rsrc/objects.json"
 PRELOAD="$PRELOAD --preload-file rsrc/set.json@/rsrc/set.json"
 PRELOAD="$PRELOAD --preload-file rsrc/default.avarascript@/rsrc/default.avarascript"
+PRELOAD="$PRELOAD --preload-file rsrc/sosumi.wav@/rsrc/sosumi.wav"
 PRELOAD="$PRELOAD --preload-file levels/${AVARA_WEB_LEVELSET:-aa-normal}@/levels/${AVARA_WEB_LEVELSET:-aa-normal}"
 
 echo "linking..."

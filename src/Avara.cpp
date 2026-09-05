@@ -90,6 +90,26 @@ std::vector<std::string> combinedArgs(std::string defaultArgs, int argc, char* a
     return args;
 }
 
+#if defined(__EMSCRIPTEN__)
+#include <emscripten.h>
+
+// Hooks for the page around the canvas. Hosting on the web is much easier with
+// a real button in the page chrome than with the small in-canvas one, and the
+// room code has to reach the page so it can be shown and shared.
+extern "C" {
+
+EMSCRIPTEN_KEEPALIVE void avara_web_start_match() {
+    if (gApplication) {
+        CAvaraGame *game = ((CAvaraAppImpl *)gApplication)->GetGame();
+        if (game) {
+            game->SendStartCommand();
+        }
+    }
+}
+
+}  // extern "C"
+#endif
+
 int main(int argc, char *argv[]) {
     // Open log file.
     Logging::OpenLog();

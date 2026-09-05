@@ -266,6 +266,9 @@ void CAvaraAppImpl::idle() {
     uint32_t procTime = SDL_GetTicks();
 
     CheckSockets();
+#if defined(__EMSCRIPTEN__)
+    gameNet->PumpPendingNet();  // finish an in-flight client connection
+#endif
     TrackerUpdate();
 
     // Poll for controller axis value at kControllerPollRate

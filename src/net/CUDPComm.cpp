@@ -31,6 +31,10 @@ int numToDrop = 0;
 
 #include "CUDPComm.h"
 
+#if defined(__EMSCRIPTEN__)
+#include <emscripten.h>
+#endif
+
 #include "AvaraTCP.h"
 #include "CApplication.h"
 #include "CRC.h"
@@ -1351,6 +1355,14 @@ void CUDPComm::Disconnect() {
     if (isConnected) {
         startTicks = TickCount();
 
+#if defined(__EMSCRIPTEN__)
+        // Same reason as in ContactServer: nothing can arrive while we spin,
+        // so this would only freeze the tab for a second and change nothing.
+        ProcessQueue();
+        isClosed = true;
+        (void)startTicks;
+        (void)changedCursor;
+#else
         do {
             ProcessQueue();
 
@@ -1365,6 +1377,7 @@ void CUDPComm::Disconnect() {
                 }
             }
         } while (delta < 1200 && !isClosed);
+#endif
 
         if (changedCursor)
             ; // SetCursor(&qd.arrow);
@@ -1456,6 +1469,16 @@ OSErr CUDPComm::ContactServer(IPaddress &serverAddr) {
         gApplication->BroadcastCommand(kBusyStartCmd);
         */
 
+#if defined(__EMSCRIPTEN__)
+        // A browser cannot make network progress while wasm holds the thread,
+        // so spinning here waiting for the server's reply would deadlock and
+        // then time out, every time. The login request is on its way; the
+        // caller watches clientReady from the frame loop instead. See
+        // CNetManager::PumpPendingNet.
+        (void)startTime;
+        (void)theEvent;
+        rejectReason = noErr;
+#else
         while (!clientReady && rejectReason == noErr) { // give the system some time...
 
             /* TODO: cancel connect dialog
@@ -1492,6 +1515,7 @@ OSErr CUDPComm::ContactServer(IPaddress &serverAddr) {
                 SDL_Log("REJECTED!!! %d\n", rejectReason);
             }
         }
+#endif
     }
 
     return rejectReason;

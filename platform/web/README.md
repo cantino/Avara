@@ -52,6 +52,37 @@ git clone --depth 1 --branch release-2.32.10 https://github.com/libsdl-org/SDL ~
 SDL2_PORT_DIR=~/ports/SDL make web
 ```
 
+## Multiplayer
+
+Browsers cannot open UDP sockets, so the client tunnels its datagrams to a
+gateway (`platform/web/gateway`) over a WebSocket. The gateway hands each
+session a virtual IPv4 address out of `10.0.0.0/8` and relays datagrams between
+sessions by that address, so `CUDPComm` keeps working with ordinary `IPaddress`
+values and never learns that no UDP is involved. `docker compose up` runs it
+alongside nginx, which proxies `/net` to it.
+
+The low 24 bits of the address are shown as a five-character **room code**.
+
+| | |
+|---|---|
+| Host | `avara.html?host=1` -- the room code appears in the bar at the bottom |
+| Join | `avara.html?join=CODE`, or type the code into the Address box |
+| Invite | the **copy invite link** button builds the `?join=` URL |
+
+A gateway elsewhere: `?gateway=wss://host/net`.
+
+### What works, and what does not
+
+Working: two browsers connect through the gateway, log in, and see each other in
+the roster with names, colours and ping. Level loading, chat and the lobby all
+behave.
+
+**Not working yet: starting a match between two web clients.** A joining client
+keeps the level it picked at startup instead of loading the host's, so the
+host's `gameStatus` never reaches `kReadyStatus` and `SendStartCommand` is
+silently a no-op. Single-player matches start and play normally. This is the
+next thing to fix.
+
 ## Run
 
 Serve `build-web/` over HTTP -- opening `avara.html` from `file://` will not
@@ -71,6 +102,9 @@ Query-string options, so a link can pick what loads:
 | `?name=Andrew` | sets the player name |
 | `?cmd=/load%20alektra` | runs a chat command at startup (repeatable) |
 | `?frametime=64` | classic 64 ms tick instead of the default 16 ms |
+| `?host=1` | start hosting |
+| `?join=CODE` | join a room |
+| `?gateway=URL` | use a gateway other than `/net` on this origin |
 | `?arg=-s` | passes a raw command-line argument (repeatable) |
 
 Alt-click **Start/Ready** to start a solo game immediately rather than only
@@ -80,7 +114,9 @@ sending a ready checkmark.
 
 | Area | Web build |
 |---|---|
-| Transport | `src/net/AvaraTCPWeb.cpp` replaces `AvaraTCP.cpp`. Browsers have no UDP sockets, so this is currently a **null transport**: single-player and `kNullNet` work, real networking does not. Everything above it (`CUDPComm`, `CNetManager`) is unchanged |
+| Transport | `src/net/AvaraTCPWeb.cpp` replaces `AvaraTCP.cpp`, tunnelling datagrams to the gateway over a WebSocket. Everything above it (`CUDPComm`, `CNetManager`) is unchanged |
+| Connecting | `CUDPComm::ContactServer` blocks waiting for the server's reply, which in a browser can only ever deadlock and time out -- nothing arrives while wasm holds the thread. On the web it sends the login and returns; `CNetManager::PumpPendingNet` adopts the connection from the frame loop once the server has assigned a slot |
+| Audio device | Opened once for the life of the page. `CAvaraGame::InitMixer` disposes and recreates the mixer on every level load, and emscripten's SDL2 does not disconnect its `ScriptProcessorNode` synchronously, so closing the device left the callback reading freed memory |
 | Tracker | Not available. `cpp-httplib` needs raw sockets and `TrackerPinger` needs a background thread; both need replacing with `emscripten_fetch`, and reading the game list from a browser also needs CORS on the tracker |
 | Assets | Preloaded into MEMFS at `/`, which is what `SDL_GetBasePath()` returns here, so `GetBasePath()` resolves `rsrc/` and `levels/` unchanged |
 | Main loop | `emscripten_set_main_loop` on `requestAnimationFrame`; the browser owns the frame clock, so the loop never blocks waiting for input |
@@ -89,7 +125,7 @@ sending a ready checkmark.
 
 ## Known gaps
 
-- **No multiplayer.** The transport is a stub. This is the next piece of work.
+- **Match start between two web clients** -- see above.
 - **Fixed 1024x768 canvas.** It does not follow the window; the canvas is
   centered on black instead.
 - **One tick per rendered frame.** Same as the desktop loop, but it means a

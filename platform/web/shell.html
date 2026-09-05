@@ -15,13 +15,31 @@
   #status.hidden { display: none; }
   #bar { width: 260px; height: 3px; background: #26262c; overflow: hidden; }
   #bar > i { display: block; height: 100%; width: 0; background: #6ea8fe; transition: width .2s; }
-  #note { position: fixed; left: 10px; bottom: 8px; opacity: .45; font-size: 11px; z-index: 5; }
+  #bar { position: fixed; left: 0; right: 0; bottom: 0; padding: 6px 10px; z-index: 5;
+         display: flex; gap: 16px; align-items: center; font-size: 11px;
+         background: rgba(11,11,13,.85); }
+  #hint { opacity: .45; }
+  #room { color: #9ec5fe; }
+  #room b { font-size: 15px; letter-spacing: .18em; color: #fff; }
+  #start { font: inherit; color: #d8f0e0; background: #2b5c3f; border: 1px solid #3f7d58;
+           border-radius: 3px; padding: 2px 10px; cursor: pointer; }
+  #start:hover { background: #35704c; }
+  #copy { font: inherit; color: #c8c8cc; background: #26262c; border: 1px solid #3a3a44;
+          border-radius: 3px; padding: 2px 8px; cursor: pointer; }
+  #copy:hover { background: #33333b; }
+  #copied { color: #7ddca4; }
 </style>
 </head>
 <body>
 <div id="wrap"><canvas id="canvas" tabindex="-1" oncontextmenu="event.preventDefault()"></canvas></div>
 <div id="status"><div id="msg">loading…</div><div id="bar"><i></i></div></div>
-<div id="note">click the canvas to capture the mouse · esc releases it</div>
+<div id="bar">
+  <span id="room" hidden>room <b id="roomcode">-----</b>
+    <button id="copy" type="button">copy invite link</button>
+    <span id="copied" hidden>copied</span></span>
+  <button id="start" type="button">start match</button>
+  <span id="hint">click the canvas to capture the mouse · esc releases it</span>
+</div>
 <script>
   var statusEl = document.getElementById('status');
   var msgEl = document.getElementById('msg');
@@ -34,8 +52,16 @@
   var args = [];
   if (params.get('name')) args.push('-n', params.get('name'));
   if (params.get('frametime')) args.push('-f', params.get('frametime'));
+  // host=1 starts serving; join=CODE connects to a room. Both go through the
+  // engine's own command-line handling, so no UI changes are needed.
+  if (params.get('host') !== null) args.push('-s');
+  if (params.get('join')) args.push('-c', params.get('join'));
   params.getAll('cmd').forEach(function (c) { args.push('-/', c); });
   params.getAll('arg').forEach(function (a) { args.push(a); });
+
+  // Where the datagram gateway lives. Same origin by default, so nginx can
+  // proxy /net to it and there is no cross-origin or mixed-content problem.
+  if (params.get('gateway')) window.AVARA_GATEWAY_URL = params.get('gateway');
 
   var Module = {
     canvas: canvas,
@@ -62,6 +88,25 @@
   window.addEventListener('keydown', function (e) {
     if (['Tab', 'F1', "'", '/'].indexOf(e.key) !== -1) e.preventDefault();
   }, true);
+
+  // The transport announces the address the gateway assigned; show it as a
+  // room code people can type or share as a link.
+  window.addEventListener('avara-room-code', function (ev) {
+    document.getElementById('roomcode').textContent = ev.detail;
+    document.getElementById('room').hidden = false;
+  });
+  // Starting a match from the page rather than the small in-canvas button.
+  document.getElementById('start').addEventListener('click', function () {
+    try { Module._avara_web_start_match(); } catch (e) { console.error(e); }
+  });
+  document.getElementById('copy').addEventListener('click', function () {
+    var url = location.origin + location.pathname + '?join=' + window.__avaraRoomCode;
+    navigator.clipboard.writeText(url).then(function () {
+      var c = document.getElementById('copied');
+      c.hidden = false;
+      setTimeout(function () { c.hidden = true; }, 1500);
+    });
+  });
 
   window.onerror = function (e) { msgEl.textContent = 'error: ' + e; statusEl.classList.remove('hidden'); };
 </script>
