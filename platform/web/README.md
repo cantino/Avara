@@ -128,7 +128,28 @@ Pick whichever fits:
 
 One host runs both nginx and the gateway; everyone connects out to it, which is
 the point of the design -- no player needs an open inbound port, and neither
-does the NAT traversal Avara normally relies on.
+does the NAT traversal Avara normally relies on. The simplest arrangement is to
+run the whole `docker compose up` on that host and tunnel the one port:
+
+```sh
+docker compose up --build -d
+cloudflared tunnel --url http://localhost:8099        # share the URL it prints
+```
+
+To put only the gateway somewhere else -- keeping the page local, or sharing one
+gateway between several people's builds -- run that image on its own:
+
+```sh
+docker build --target gateway -t avara-gw -f platform/web/Dockerfile .
+docker run -d -p 8088:8088 avara-gw
+cloudflared tunnel --url http://localhost:8088
+```
+
+and load the page with `?gateway=wss://<the tunnel host>/net`. A page on
+`http://localhost` may open a `wss://` socket; the reverse, an `https://` page
+opening `ws://`, is blocked as mixed content, so a remote gateway needs TLS
+whenever the page has it. `docker compose up gateway` also works and publishes
+8088 (`AVARA_GW_PORT` to change it).
 
 ### Starting a match
 
@@ -165,6 +186,7 @@ Query-string options, so a link can pick what loads:
 | `?name=Andrew` | sets the player name |
 | `?cmd=/load%20alektra` | runs a chat command at startup (repeatable) |
 | `?frametime=64` | classic 64 ms tick instead of the default 16 ms |
+| `?scale=2` | render at two backing pixels per CSS pixel (sharper, four times the fill rate); default 1 |
 | `?host=1` | start hosting |
 | `?join=CODE` | join a room |
 | `?gateway=URL` | use a gateway other than `/net` on this origin |
@@ -183,7 +205,7 @@ sending a ready checkmark.
 | Tracker | Not available. `cpp-httplib` needs raw sockets and `TrackerPinger` needs a background thread; both need replacing with `emscripten_fetch`, and reading the game list from a browser also needs CORS on the tracker |
 | Assets | Preloaded into MEMFS at `/`, which is what `SDL_GetBasePath()` returns here, so `GetBasePath()` resolves `rsrc/` and `levels/` unchanged |
 | Main loop | `emscripten_set_main_loop` on `requestAnimationFrame`; the browser owns the frame clock, so the loop never blocks waiting for input. While the tab is hidden it gets no animation frames at all, which in lockstep would stall every other player, so a worker clock drives `nanogui::pump_mainloop()` instead -- simulation and network without rendering |
-| Canvas | Sized by the page to the window, so the game renders at the window's resolution rather than being scaled from a fixed buffer. `SDL_SetWindowSize` from `avara_web_resize`, which nanogui already handles |
+| Canvas | Sized by the page to the window via `avara_web_resize`, capped at about 2.3 megapixels. `SDL_WINDOW_ALLOW_HIGHDPI` is *not* set here: it makes the backing store `devicePixelRatio` times the window on each axis, so a full-window canvas on a retina display draws four times the pixels -- enough to put a large window at a couple of frames a second, for no visible gain on flat-shaded polygons. `?scale=2` opts back in |
 | Page controls | Level picker, ready, start and a chat/command box live in the page rather than in the canvas. Chat goes through `CNetManager::SendRosterMessage`, the same path the in-canvas roster uses, so all the `/` commands work |
 | GUI | nanogui, unchanged, inside the canvas |
 | `vendor/nanogui/glutil.cpp` | Excluded. Desktop-GL only, and nothing in Avara references it |

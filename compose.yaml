@@ -21,5 +21,10 @@ services:
       dockerfile: platform/web/Dockerfile
       target: gateway
     image: avara-gw
+    # Published so another machine's page can be pointed at this gateway with
+    # ?gateway=ws://host:8088/net. Not needed when the page is served from the
+    # nginx above, which proxies /net to it over the compose network.
+    ports:
+      - "${AVARA_GW_PORT:-8088}:8088"
     environment:
       AVARA_GW_VERBOSE: ${AVARA_GW_VERBOSE:-}

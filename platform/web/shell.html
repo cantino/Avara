@@ -9,7 +9,7 @@
                font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; overflow: hidden; }
   #wrap { position: fixed; left: 0; right: 0; top: 0; bottom: 0;
           display: flex; align-items: flex-start; justify-content: center; }
-  canvas#canvas { display: block; background: #000; outline: none; image-rendering: pixelated; }
+  canvas#canvas { display: block; background: #000; outline: none; }
   #status { position: fixed; inset: 0; display: flex; flex-direction: column;
             align-items: center; justify-content: center; gap: 14px;
             background: #0b0b0d; z-index: 10; text-align: center; }
@@ -215,16 +215,30 @@
   }, 500);
 
   // The canvas renders at whatever size the window leaves it, rather than at a
-  // fixed size scaled up, so text and edges stay sharp.
+  // fixed size scaled up. One backing pixel per CSS pixel by default: a retina
+  // display would otherwise quadruple the pixel count for no visible gain on
+  // flat-shaded polygons. ?scale=2 asks for the sharper, four-times-costlier
+  // version, ?scale=0.75 for a cheaper one.
+  var SCALE = parseFloat(params.get('scale')) || 1;
+  var MAX_PIXELS = 2300000;   // about 1920x1200; caps very large windows
   var resizeTimer = null;
+
   function fitCanvas() {
     if (!ready()) return;
     var bar = document.getElementById('toolbar');
-    var w = Math.max(640, Math.floor(window.innerWidth));
-    var h = Math.max(480, Math.floor(window.innerHeight - (bar ? bar.offsetHeight : 0)));
-    if (w === canvas.__w && h === canvas.__h) return;
-    canvas.__w = w; canvas.__h = h;
+    var cssW = Math.max(320, Math.floor(window.innerWidth));
+    var cssH = Math.max(240, Math.floor(window.innerHeight - (bar ? bar.offsetHeight : 0)));
+    var w = cssW * SCALE, h = cssH * SCALE;
+    var over = (w * h) / MAX_PIXELS;
+    if (over > 1) { var k = Math.sqrt(over); w /= k; h /= k; }
+    w = Math.max(320, Math.round(w));
+    h = Math.max(240, Math.round(h));
+    if (w === canvas.__w && h === canvas.__h && cssW === canvas.__cw) return;
+    canvas.__w = w; canvas.__h = h; canvas.__cw = cssW;
     call(function () { Module._avara_web_resize(w, h); });
+    // Whatever we render at, show it across the whole window.
+    canvas.style.width = cssW + 'px';
+    canvas.style.height = cssH + 'px';
   }
   window.addEventListener('resize', function () {
     clearTimeout(resizeTimer);

@@ -156,7 +156,15 @@ Screen::Screen(const Vector2i &size, const std::string &caption, bool resizable,
         SDL_GL_SetAttribute(SDL_GL_MULTISAMPLESAMPLES, nSamples);
     }
 
-    int flags = SDL_WINDOW_OPENGL | SDL_WINDOW_ALLOW_HIGHDPI;
+    int flags = SDL_WINDOW_OPENGL;
+#if !defined(__EMSCRIPTEN__)
+    /* On the web this asks SDL to make the backing store devicePixelRatio times
+       the window in each axis, so a retina display quadruples the pixels drawn
+       for a full-window canvas -- enough to take a large window to a couple of
+       frames a second. The page picks the render resolution instead; see
+       avara_web_resize. */
+    flags |= SDL_WINDOW_ALLOW_HIGHDPI;
+#endif
     if (resizable) {
         flags |= SDL_WINDOW_RESIZABLE;
     }
